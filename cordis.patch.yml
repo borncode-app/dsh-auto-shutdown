@@ -1,0 +1,23 @@
+# Inserts the auto-shutdown Host row. When a root session finishes its work,
+# the plugin asks the operating system to power the computer down, using the
+# system's own visible countdown so the user can still cancel it.
+#
+# `enabled` is OFF by default: a shutdown is not something a deployment should
+# start doing on its own. The Settings switch stores a runtime override in the
+# plugin directory's state.json.
+- insert:
+    - id: auto-shutdown
+      name: '@local/dsh-auto-shutdown'
+      config:
+        # Path the Web GUI reads and posts the toggle to.
+        endpoint: /plugins/auto-shutdown
+        # Off by default. The user turns this on deliberately.
+        enabled: false
+        # Countdown the operating system shows before it powers the computer down.
+        delaySeconds: 120
+        # Shortest countdown the plugin arms.
+        minDelaySeconds: 30
+        # Longest countdown the plugin arms.
+        maxDelaySeconds: 3600
+        # The note Windows shows next to its own shutdown countdown dialog.
+        message: 'The Harness session finished, so this computer is shutting down. Run "shutdown /a" to cancel.'

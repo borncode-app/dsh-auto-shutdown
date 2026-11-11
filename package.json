@@ -1,0 +1,37 @@
+{
+  "name": "@local/dsh-auto-shutdown",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Powers the computer down after a Harness session finishes, through the operating system's own visible countdown. Ships off; a switch in Settings turns it on.",
+  "author": "BornCode (https://github.com/borncode-app)",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/borncode-app/dsh-auto-shutdown.git" },
+  "homepage": "https://github.com/borncode-app/dsh-auto-shutdown#readme",
+  "bugs": { "url": "https://github.com/borncode-app/dsh-auto-shutdown/issues" },
+  "keywords": ["dsh","deepseek-harness","dsh-plugin","shutdown","power-management","automation"],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.19.0"
+  },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": ["@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-client-ui-conversation"]
+    }
+  }
+}
