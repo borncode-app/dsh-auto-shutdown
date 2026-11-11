@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 /** File that keeps the user's on/off choice across restarts. */
 const STATE_FILE = fileURLToPath(new URL('./state.json', import.meta.url))
 /** Which generation of this file a running Host loaded; lives in every state answer. */
-const REVISION = '2026-11-12.2'
+const REVISION = '2026-11-12.3'
 /** How long the operating system waits before it powers the computer down. */
 const DEFAULT_DELAY_SECONDS = 120
 /** The shortest countdown the plugin arms; below this a reply could never arrive. */
@@ -19,6 +19,8 @@ const DEFAULT_MESSAGE = 'The Harness session finished, so this computer is shutt
 const LIMIT_CODES = ['QUOTA', 'ACCOUNT_QUOTA', 'RATE_LIMIT']
 /** How long the plugin waits for the operating system's answer. */
 const COMMAND_TIMEOUT_MS = 15_000
+/** How many per-session choices the state file keeps before dropping the oldest. */
+const MAX_STORED_SESSIONS = 500
 
 export const Config = z.object({
   /** Path the Web GUI reads and posts the toggle to. */
@@ -90,23 +92,23 @@ export const commands = {
 }
 
 /**
- * Shut the computer down after a Harness session finishes.
+ * Shut the computer down after one Harness session finishes.
  *
  * The plugin never powers the computer down on its own: it asks Windows to do it
  * with a visible countdown, the way the operating system's own "Shut down" does.
  * Windows shows its own dialog during that countdown and aborts the shutdown
  * when the user cancels it, so the countdown is the safety net, not the plugin.
  *
- * The session is released in two cases: a turn that completed (the agent
- * finished the work), and a turn that ended in a spent usage limit (the token
- * ran out). The second case only releases the machine when nothing will pick
- * the session up again: with Auto-continue on, the session resumes by itself and
- * the computer stays on until the resumed turn really finishes.
+ * The switch belongs to ONE conversation. Turning it on for a session arms that
+ * session only: another session finishing, or another session's message, never
+ * touches it. The decision is recorded per session id in `state.json`, and the
+ * conversation keeps showing its own countdown only.
  *
- * The switch is OFF by default and its state lives in `state.json`, next to the
- * plugin, exactly like the auto-continue plugin's. Any new message from the user
- * cancels a pending shutdown: the machine is only released once nobody is
- * waiting on the agent any more.
+ * That session releases the machine in two cases: a turn that completed (the
+ * agent finished the work), and a turn that ended in a spent usage limit (the
+ * token ran out). The second case only releases the machine when nothing will
+ * pick the session up again: with Auto-continue on for that session, it resumes
+ * by itself and the computer stays on until the resumed turn really finishes.
  */
 export async function apply(ctx, config) {
   const read = (field, fallback) => {
@@ -117,8 +119,12 @@ export async function apply(ctx, config) {
   }
 
   const logger = ctx.logger
-  /** The runtime on/off choice; `undefined` until `state.json` or a toggle decides. */
-  let chosen
+  /**
+   * Explicit per-session on/off choices. A session with no entry falls back to
+   * the plugin config, which ships OFF: powering the computer down is a decision
+   * for one conversation, never a default for the whole application.
+   */
+  const choices = new Map()
   let ready = false
   /** The countdown that is armed right now, when one is. */
   let pending = null
@@ -128,20 +134,39 @@ export async function apply(ctx, config) {
    */
   let generation = 0
 
+  /** The default for a session that has no stored choice. */
   const configured = () => read('enabled', false) !== false
-  const enabled = () => (chosen === undefined ? configured() : chosen === true)
+  /** Whether this session may power the computer down. */
+  const enabledFor = (sessionId) => {
+    const key = typeof sessionId === 'string' ? sessionId : ''
+    if (choices.has(key)) return choices.get(key) === true
+    return configured()
+  }
   /** Only Windows offers a countdown this plugin can rely on. */
   const supported = () => commands.supported() === true
 
-  /** Persist the runtime choice; a failure must not lose the in-memory decision. */
+  /** Record one session's choice, dropping the entry when it matches the default. */
+  const setChoice = (sessionId, value) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) return false
+    if (value === configured()) choices.delete(sessionId)
+    else choices.set(sessionId, value === true)
+    return true
+  }
+
+  /** Persist the per-session choices; a failure must not lose the in-memory decision. */
   const persist = async () => {
-    const body = `${JSON.stringify({ enabled: enabled() }, null, 2)}\n`
+    // Keep the file small: a Map keeps insertion order, so drop the oldest ids.
+    while (choices.size > MAX_STORED_SESSIONS) {
+      const oldest = choices.keys().next().value
+      choices.delete(oldest)
+    }
+    const body = `${JSON.stringify({ sessions: Object.fromEntries(choices) }, null, 2)}\n`
     const temporary = `${STATE_FILE}.tmp`
     try {
       await writeFile(temporary, body, 'utf8')
       await rename(temporary, STATE_FILE)
     } catch (error) {
-      logger.warn(`auto-shutdown: could not save the toggle: ${error instanceof Error ? error.message : String(error)}`)
+      logger.warn(`auto-shutdown: could not save the switch: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -232,7 +257,7 @@ export async function apply(ctx, config) {
    * the shutdown plugin asks it over HTTP instead of guessing. A route that
    * cannot be read counts as "nothing will resume this session".
    */
-  const continuation = async () => {
+  const continuation = async (sessionId) => {
     const route = read('continueEndpoint', '/plugins/auto-continue')
     if (typeof route !== 'string' || route.length === 0) return undefined
     let url
@@ -241,6 +266,7 @@ export async function apply(ctx, config) {
     } catch {
       return undefined
     }
+    url.searchParams.set('sessionId', String(sessionId))
     let response
     try {
       response = await fetch(url, {
@@ -273,7 +299,7 @@ export async function apply(ctx, config) {
     const attempts = Math.max(1, read('settleAttempts', 5))
     const interval = Math.max(0, read('settleIntervalMs', 3000))
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      const state = await continuation()
+      const state = await continuation(sessionId)
       // The route is unreachable: nothing is going to resume the session.
       if (state === undefined) return false
       // The switch is off, or the resuming plugin cannot work here.
@@ -287,23 +313,31 @@ export async function apply(ctx, config) {
     return false
   }
 
-  /** Answer one browser poll or toggle with the current state. */
-  const snapshot = () => ({
-    revision: REVISION,
-    enabled: enabled(),
-    supported: supported(),
-    platform: process.platform,
-    delaySeconds: delayFor(undefined),
-    now: Date.now(),
-    pending: pending === null
-      ? null
-      : {
-          sessionId: pending.sessionId,
-          armedAt: pending.armedAt,
-          dueAt: pending.dueAt,
-          delaySeconds: pending.delaySeconds,
-        },
-  })
+  /** Answer one browser poll or toggle with the state of one session. */
+  const snapshot = (sessionId) => {
+    const key = typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : null
+    return {
+      revision: REVISION,
+      sessionId: key,
+      enabled: enabledFor(key),
+      supported: supported(),
+      platform: process.platform,
+      delaySeconds: delayFor(undefined),
+      now: Date.now(),
+      /** Every session holding an explicit ON choice, for the settings overview. */
+      sessions: [...choices.entries()].filter(([, value]) => value === true).map(([id]) => id),
+      /** Whether the countdown that is running belongs to the asking session. */
+      pendingHere: pending !== null && pending.sessionId === key,
+      pending: pending === null
+        ? null
+        : {
+            sessionId: pending.sessionId,
+            armedAt: pending.armedAt,
+            dueAt: pending.dueAt,
+            delaySeconds: pending.delaySeconds,
+          },
+    }
+  }
 
   /** Read one JSON request body, bounded. */
   const readBody = (req) => new Promise((resolve) => {
@@ -330,7 +364,15 @@ export async function apply(ctx, config) {
   await (async () => {
     try {
       const saved = JSON.parse(await readFile(STATE_FILE, 'utf8'))
-      if (typeof saved?.enabled === 'boolean') chosen = saved.enabled
+      const stored = saved?.sessions
+      if (stored !== null && typeof stored === 'object' && !Array.isArray(stored)) {
+        for (const [sessionId, value] of Object.entries(stored)) {
+          if (typeof value === 'boolean' && typeof sessionId === 'string' && sessionId.length > 0) choices.set(sessionId, value)
+        }
+      }
+      // A legacy `{"enabled": bool}` file described one global switch and is
+      // ignored on purpose: every session falls back to the plugin config, so
+      // an old "on" cannot turn every conversation on at once.
     } catch {
       /* no saved choice: the plugin config decides */
     }
@@ -340,17 +382,20 @@ export async function apply(ctx, config) {
   ctx.on('session/event', (session, event) => {
     const sessionId = typeof session?.id === 'string' ? session.id : ''
     if (event?.type === 'user/message') {
-      // The user is back at the keyboard: the machine is not free yet.
-      if (pending !== null) void abort('the user sent a message')
+      // Only the conversation that armed the countdown takes it back; typing in
+      // another session says nothing about this one.
+      if (pending !== null && (pending.sessionId === null || pending.sessionId === sessionId)) {
+        void abort('the user sent a message')
+      }
       return
     }
     if (event?.type !== 'turn/end') return
     const reason = event?.data?.reason
     // A stopped turn is not finished work; only a completed one releases the machine.
-    if (!ready || !enabled()) return
+    if (!ready || !enabledFor(sessionId)) return
     if (!eligible(session)) return
     if (reason?.kind === 'completed') {
-      // The agent finished the work: the session is done.
+      // The agent finished the work: this session is done.
       void arm(sessionId, delayFor(undefined))
       return
     }
@@ -376,12 +421,22 @@ export async function apply(ctx, config) {
       res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
       res.end(JSON.stringify(body))
     }
+    /** The session a request speaks for, read from the query string. */
+    const asked = (req) => {
+      try {
+        const url = new URL(String(req.url ?? endpoint), 'http://localhost')
+        const value = url.searchParams.get('sessionId')
+        return typeof value === 'string' ? value : ''
+      } catch {
+        return ''
+      }
+    }
     return ctx.webServer.register({
       kind: 'exact',
       path: endpoint,
       handler: (req, res) => {
         if (req.method === 'GET' || req.method === 'HEAD') {
-          reply(res, 200, snapshot())
+          reply(res, 200, snapshot(asked(req)))
           return
         }
         if (req.method !== 'POST') {
@@ -390,21 +445,31 @@ export async function apply(ctx, config) {
         }
         void (async () => {
           const request = await readBody(req)
+          const sessionId = typeof request.sessionId === 'string' ? request.sessionId : ''
           if (request.action === 'toggle') {
-            chosen = typeof request.enabled === 'boolean' ? request.enabled : !enabled()
+            if (!setChoice(sessionId, typeof request.enabled === 'boolean' ? request.enabled : !enabledFor(sessionId))) {
+              reply(res, 400, { error: 'session-required' })
+              return
+            }
             await persist()
-            // Turning the switch off must also release a countdown already running.
-            if (!enabled() && pending !== null) await abort('the switch was turned off')
+            // Turning this session off must release a countdown it started.
+            if (!enabledFor(sessionId) && pending !== null && pending.sessionId === sessionId) {
+              await abort('the session was switched off')
+            }
           } else if (request.action === 'cancel') {
             await abort('the user cancelled it')
+          } else if (request.action === 'off-all') {
+            choices.clear()
+            await persist()
+            if (pending !== null) await abort('every session was switched off')
           } else if (request.action === 'arm') {
-            if (!enabled()) {
-              logger.warn('auto-shutdown: the switch is off; nothing was armed')
+            if (!enabledFor(sessionId)) {
+              logger.warn('auto-shutdown: this session is not armed; nothing was armed')
             } else {
-              await arm(typeof request.sessionId === 'string' ? request.sessionId : '', request.delaySeconds)
+              await arm(sessionId, request.delaySeconds)
             }
           }
-          reply(res, 200, snapshot())
+          reply(res, 200, snapshot(sessionId))
         })().catch((error) => {
           logger.warn(`auto-shutdown: control route failed: ${error instanceof Error ? error.message : String(error)}`)
           try {

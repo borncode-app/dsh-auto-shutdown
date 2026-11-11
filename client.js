@@ -18,16 +18,16 @@ window.__ModuleLoader__.load({
     const en = {
       'nav': 'Automation',
       'title': 'Automation',
-      'intro': 'Two switches that let the Harness keep working on its own: resume the conversation after a spent usage limit, and power the computer down once the session has finished its work.',
+      'intro': 'Both switches belong to a single conversation. To turn one on, use the switch under the composer of the conversation you mean; this page only reports what is on.',
       'meta': {
         'title': 'Auto-shutdown the PC after a session finishes',
         'description': 'Powers the computer down through the operating system\'s own visible countdown once a session\'s work finishes, and hosts the switch that turns Auto-continue on or off. Ships off.',
       },
       'autoContinue': 'Auto-continue after usage limits',
-      'autoContinueHint': 'When a model usage limit runs out, this conversation resumes by itself as soon as the limit resets. Switch it off to stop and wait at the limit instead.',
+      'autoContinueHint': 'When a model usage limit runs out, that conversation resumes by itself as soon as the limit resets. It belongs to one conversation: turn it on from the switch under that conversation\'s composer.',
       'autoContinueUnsupported': 'Automatic continuation needs the schedule service, which is not mounted here.',
       'autoShutdown': 'Auto-ShutdownPC',
-      'autoShutdownHint': 'The computer shuts down by itself once the session has finished its work. A session stopped by a spent usage limit releases it too, unless Auto-continue will pick that session up again. Keep this off unless you want the machine to power off without asking.',
+      'autoShutdownHint': 'The computer shuts down by itself once the session has finished its work. A session stopped by a spent usage limit releases it too, unless Auto-continue will pick that session up again. It belongs to one conversation: turn it on from the switch under that conversation\'s composer.',
       'autoShutdownUnsupported': 'This platform cannot power the computer down, so this switch stays off.',
       'autoShutdownWarning': 'Warning: this switch really powers the computer down. Anything that is still unsaved is lost.',
       'pending': 'Pending shutdown',
@@ -35,8 +35,11 @@ window.__ModuleLoader__.load({
       'pendingHint': 'A shutdown is armed. The computer goes down when the countdown reaches zero.',
       'cancel': 'Cancel shutdown',
       'busy': 'Working…',
-      'loading': 'Loading…',
       'failed': 'The action failed.',
+      'countOn': '{count} conversations on',
+      'countNone': 'No conversation has it on',
+      'offAll': 'Turn every switch off',
+      'offAllHint': 'Clears the switch in every conversation and cancels a shutdown that is already counting down.',
       'unit.h': '{count}h',
       'unit.m': '{count}m',
       'unit.s': '{count}s',
@@ -55,16 +58,16 @@ window.__ModuleLoader__.load({
     const th = {
       'nav': 'ระบบอัตโนมัติ',
       'title': 'ระบบอัตโนมัติ',
-      'intro': 'สองสวิตช์ที่ให้ Harness ทำงานต่อได้เองโดยไม่ต้องรอคุณ คือต่อบทสนทนาใหม่เมื่อโควตาการใช้งานหมดแล้วรีเซ็ต และสั่งปิดเครื่องเมื่องานของเซสชันทำเสร็จ',
+      'intro': 'สวิตช์ทั้งสองเป็นของบทสนทนาละหนึ่งตัว ถ้าจะเปิด ให้ใช้สวิตช์ใต้ช่องพิมพ์ของบทสนทนาที่คุณต้องการ หน้านี้เพียงบอกว่าอะไรเปิดอยู่',
       'meta': {
         'title': 'ปิดเครื่องอัตโนมัติเมื่อ session จบ',
         'description': 'สั่งปิดเครื่องผ่านตัวนับถอยหลังของระบบปฏิบัติการเมื่องานใน session จบ พร้อมสวิตช์สำหรับเปิด/ปิด Auto-continue ค่าเริ่มต้นคือปิด',
       },
       'autoContinue': 'ต่ออัตโนมัติเมื่อโควตาหมด',
-      'autoContinueHint': 'เมื่อโควตาการใช้งานของโมเดลหมด บทสนทนานี้จะกลับมาทำงานต่อเองทันทีที่โควตารีเซ็ต ปิดไว้ถ้าต้องการให้หยุดรอที่โควตา',
+      'autoContinueHint': 'เมื่อโควตาการใช้งานของโมเดลหมด บทสนทนานั้นจะกลับมาทำงานต่อเองทันทีที่โควตารีเซ็ต สวิตช์นี้เป็นของบทสนทนาเดียว เปิดได้จากสวิตช์ใต้ช่องพิมพ์ของบทสนทนานั้น',
       'autoContinueUnsupported': 'การต่ออัตโนมัติต้องใช้บริการตั้งเวลา ซึ่งยังไม่ได้ติดตั้งไว้ที่นี่',
       'autoShutdown': 'Auto-ShutdownPC',
-      'autoShutdownHint': 'เครื่องจะสั่งปิดไฟเองเมื่องานของเซสชันทำเสร็จ และจะปิดด้วยเมื่อ session ติดโควตาจนทำต่อไม่ได้ เว้นแต่ Auto-continue จะมาต่อให้เอง ควรปิดไว้ก่อน เว้นแต่คุณต้องการให้เครื่องปิดไฟโดยไม่ต้องถาม',
+      'autoShutdownHint': 'เครื่องจะสั่งปิดไฟเองเมื่องานของเซสชันทำเสร็จ และจะปิดด้วยเมื่อ session ติดโควตาจนทำต่อไม่ได้ เว้นแต่ Auto-continue จะมาต่อให้เอง สวิตช์นี้เป็นของบทสนทนาเดียว เปิดได้จากสวิตช์ใต้ช่องพิมพ์ของบทสนทนานั้น',
       'autoShutdownUnsupported': 'แพลตฟอร์มนี้สั่งปิดเครื่องไม่ได้ สวิตช์นี้จึงถูกปิดไว้',
       'autoShutdownWarning': 'คำเตือน: สวิตช์นี้สั่งปิดเครื่องจริง งานที่ยังไม่บันทึกจะหายไป',
       'pending': 'รอปิดเครื่อง',
@@ -72,8 +75,11 @@ window.__ModuleLoader__.load({
       'pendingHint': 'มีการสั่งปิดเครื่องอยู่ เครื่องจะปิดไฟเมื่อเวลานับถอยหลังถึงศูนย์',
       'cancel': 'ยกเลิกการปิดเครื่อง',
       'busy': 'กำลังทำงาน…',
-      'loading': 'กำลังโหลด…',
       'failed': 'ดำเนินการไม่สำเร็จ',
+      'countOn': '{count} บทสนทนาเปิดอยู่',
+      'countNone': 'ยังไม่มีบทสนทนาใดเปิดอยู่',
+      'offAll': 'ปิดทุกสวิตช์',
+      'offAllHint': 'ล้างสวิตช์ในทุกบทสนทนา และยกเลิกการปิดเครื่องที่นับถอยหลังอยู่',
       'unit.h': '{count} ชม.',
       'unit.m': '{count} น.',
       'unit.s': '{count} ว.',
@@ -92,16 +98,16 @@ window.__ModuleLoader__.load({
     const zh = {
       'nav': '自动化',
       'title': '自动化',
-      'intro': '两个开关，让 Harness 在你不盯着的时候也能继续工作：用量额度耗尽并恢复后自动续接对话，以及会话工作完成后自动关机。',
+      'intro': '两个开关各自只属于一个对话。要开启，请点击目标对话输入框下方的开关；此页只显示哪些对话已开启。',
       'meta': {
         'title': '会话结束后自动关机',
         'description': '会话工作完成后，通过操作系统自带的可见倒计时来关闭电脑，并提供自动续接开关。默认关闭。',
       },
       'autoContinue': '用量额度耗尽后自动续接',
-      'autoContinueHint': '模型用量额度耗尽后，本次对话会在额度恢复时自动继续。关闭它则在额度耗尽处停下等待。',
+      'autoContinueHint': '模型用量额度耗尽后，那个对话会在额度恢复时自动继续。该开关只属于一个对话，请点击该对话输入框下方的开关来开启。',
       'autoContinueUnsupported': '自动续接需要定时任务服务，此处尚未挂载。',
       'autoShutdown': 'Auto-ShutdownPC',
-      'autoShutdownHint': '会话的工作完成后，机器会自行关机。会话因额度耗尽而停下时也会关机，除非 Auto-continue 会继续它。除非你确实希望它直接关机，否则请保持关闭。',
+      'autoShutdownHint': '会话的工作完成后，机器会自行关机。会话因额度耗尽而停下时也会关机，除非 Auto-continue 会继续它。该开关只属于一个对话，请点击该对话输入框下方的开关来开启。',
       'autoShutdownUnsupported': '此平台无法关闭电脑，因此该开关保持关闭。',
       'autoShutdownWarning': '警告：该开关会真正关闭电脑，未保存的工作将会丢失。',
       'pending': '待关机',
@@ -109,8 +115,11 @@ window.__ModuleLoader__.load({
       'pendingHint': '已安排关机，倒计时归零时电脑会关闭。',
       'cancel': '取消关机',
       'busy': '处理中…',
-      'loading': '加载中…',
       'failed': '操作失败。',
+      'countOn': '{count} 个对话已开启',
+      'countNone': '没有对话开启',
+      'offAll': '关闭所有开关',
+      'offAllHint': '清除每个对话的开关设置，并取消正在进行的关机倒计时。',
       'unit.h': '{count}小时',
       'unit.m': '{count}分',
       'unit.s': '{count}秒',
@@ -152,6 +161,9 @@ window.__ModuleLoader__.load({
       '.dshas_label{font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}',
       '.dshas_hint{margin-top:2px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}',
       '.dshas_warning{margin-top:4px;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary)}',
+      '.dshas_overviewRow{display:flex;flex-direction:column;gap:2px}',
+      '.dshas_statusLine{font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}',
+      '.dshas_offAll{display:flex;flex-direction:column;gap:6px}',
     ].join('')
 
     /** The chip's own styles; they ride on the composer dock. */
@@ -300,8 +312,12 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The Automation settings section: the two switches that let the Harness
-     * keep working without the user.
+     * The Automation settings section: an overview of the two switches that now
+     * belong to each conversation, plus the machine-wide countdown they share.
+     *
+     * Neither switch is rendered here: both live under the composer of the
+     * conversation they control, so this section reports what is on and offers
+     * one action that turns all of them off.
      *
      * @param {object} props - the row's own props.
      * @returns {object} the section element.
@@ -336,8 +352,8 @@ window.__ModuleLoader__.load({
       }, [])
 
       /**
-       * Read the other plugin's state; a failure here only leaves that one
-       * switch empty, the section itself still works.
+       * Read the other plugin's state; a failure here only leaves that row
+       * without a count, the section itself still works.
        *
        * @returns {Promise<object | null>} the state, or null when it failed.
        */
@@ -405,11 +421,61 @@ window.__ModuleLoader__.load({
         }
       }
 
+      /**
+       * The session ids one plugin reports as switched on.
+       *
+       * @param {object | null} state - one plugin's state, or null.
+       * @returns {string[]} the session ids it reports as on.
+       */
+      const sessionIds = (state) => (Array.isArray(state?.sessions) ? state.sessions : [])
+
+      /**
+       * How many conversations are on, in the active language.
+       *
+       * @param {number} count - the number of conversations that are on.
+       * @returns {string} the status line to show.
+       */
+      const countText = (count) => (count > 0 ? t('countOn', { count }) : t('countNone'))
+
+      /**
+       * Turn every conversation's switch off in both plugins.
+       *
+       * The shutdown plugin clears every session choice and cancels a running
+       * countdown in one action. The auto-continue plugin has no such action,
+       * so each session it reports is switched off under its own id. Both
+       * readings are refreshed afterwards.
+       *
+       * @returns {Promise<void>} once both plugins settled.
+       */
+      const turnAllOff = async () => {
+        if (busyRef.current) return
+        busyRef.current = true
+        setBusy('off-all')
+        try {
+          await send(ENDPOINT, { action: 'off-all' })
+          const response = await fetch(CONTINUE_ENDPOINT, { headers: { accept: 'application/json' } })
+          if (!response.ok) throw new Error(`status ${response.status}`)
+          const fresh = await response.json()
+          for (const sessionId of sessionIds(fresh)) {
+            await send(CONTINUE_ENDPOINT, { action: 'toggle', enabled: false, sessionId })
+          }
+          await loadShutdown()
+          await loadContinuation()
+        } catch (failure) {
+          setError(failure instanceof Error ? failure.message : String(failure))
+        } finally {
+          busyRef.current = false
+          setBusy('')
+        }
+      }
+
       const pending = shutdown?.pending ?? null
       const remaining = pending === null ? 0 : pending.dueAt - (clock > 0 ? clock : Date.now())
       const waiting = pending !== null && remaining > 0
       const shutdownSupported = shutdown === null || shutdown.supported !== false
       const continuationSupported = continuation === null || continuation.supported !== false
+      const shutdownCount = sessionIds(shutdown).length
+      const continuationCount = sessionIds(continuation).length
       const busyHere = busy.length > 0
 
       return React.createElement(
@@ -427,60 +493,26 @@ window.__ModuleLoader__.load({
         React.createElement('hr', { className: 'dshas_separator' }),
         React.createElement(
           'div',
-          { className: 'dshas_switchRow' },
-          React.createElement(
-            'button',
-            {
-              type: 'button',
-              role: 'switch',
-              className: busy === CONTINUE_ENDPOINT ? 'dshas_switch dshas_switchBusy' : 'dshas_switch',
-              'aria-checked': continuation?.enabled === true ? 'true' : 'false',
-              'aria-label': t('autoContinue'),
-              'aria-busy': busy === CONTINUE_ENDPOINT ? 'true' : 'false',
-              disabled: busyHere || continuation === null || !continuationSupported,
-              onClick: () => {
-                const next = continuation?.enabled !== true
-                setContinuation((current) => (current === null ? current : { ...current, enabled: next }))
-                void act(CONTINUE_ENDPOINT, { action: 'toggle', enabled: next }, (answer) => setContinuation(answer))
-              },
-            },
-            React.createElement('span', { className: 'dshas_switchKnob' }),
-          ),
+          { className: 'dshas_overviewRow' },
+          React.createElement('div', { className: 'dshas_label' }, t('autoContinue')),
+          React.createElement('div', { className: 'dshas_hint' }, t('autoContinueHint')),
           React.createElement(
             'div',
-            null,
-            React.createElement('div', { className: 'dshas_label' }, t('autoContinue')),
-            React.createElement('div', { className: 'dshas_hint' }, continuationSupported ? t('autoContinueHint') : t('autoContinueUnsupported')),
+            { className: 'dshas_status dshas_statusLine' },
+            continuationSupported ? countText(continuationCount) : t('autoContinueUnsupported'),
           ),
         ),
         React.createElement('hr', { className: 'dshas_separator' }),
         React.createElement(
           'div',
-          { className: 'dshas_switchRow' },
-          React.createElement(
-            'button',
-            {
-              type: 'button',
-              role: 'switch',
-              className: busy === ENDPOINT ? 'dshas_switch dshas_switchBusy' : 'dshas_switch',
-              'aria-checked': shutdown?.enabled === true ? 'true' : 'false',
-              'aria-label': t('autoShutdown'),
-              'aria-busy': busy === ENDPOINT ? 'true' : 'false',
-              disabled: busyHere || shutdown === null || !shutdownSupported,
-              onClick: () => {
-                const next = shutdown?.enabled !== true
-                setShutdown((current) => (current === null ? current : { ...current, enabled: next }))
-                void act(ENDPOINT, { action: 'toggle', enabled: next }, (answer) => setShutdown(answer))
-              },
-            },
-            React.createElement('span', { className: 'dshas_switchKnob' }),
-          ),
+          { className: 'dshas_overviewRow' },
+          React.createElement('div', { className: 'dshas_label' }, t('autoShutdown')),
+          React.createElement('div', { className: 'dshas_hint' }, t('autoShutdownHint')),
+          shutdownSupported ? React.createElement('div', { className: 'dshas_warning', role: 'note' }, t('autoShutdownWarning')) : null,
           React.createElement(
             'div',
-            null,
-            React.createElement('div', { className: 'dshas_label' }, t('autoShutdown')),
-            React.createElement('div', { className: 'dshas_hint' }, shutdownSupported ? t('autoShutdownHint') : t('autoShutdownUnsupported')),
-            shutdownSupported ? React.createElement('div', { className: 'dshas_warning', role: 'note' }, t('autoShutdownWarning')) : null,
+            { className: 'dshas_status dshas_statusLine' },
+            shutdownSupported ? countText(shutdownCount) : t('autoShutdownUnsupported'),
           ),
         ),
         waiting
@@ -515,6 +547,26 @@ window.__ModuleLoader__.load({
             React.createElement('div', { className: 'dshas_hint' }, t('pendingHint')),
           )
           : null,
+        React.createElement('hr', { className: 'dshas_separator' }),
+        React.createElement(
+          'div',
+          { className: 'dshas_offAll' },
+          React.createElement(
+            'div',
+            { className: 'dshas_actions' },
+            React.createElement(
+              'button',
+              {
+                type: 'button',
+                className: 'dshas_button dshas_buttonDanger',
+                disabled: busyHere,
+                onClick: () => void turnAllOff(),
+              },
+              t('offAll'),
+            ),
+          ),
+          React.createElement('div', { className: 'dshas_hint' }, t('offAllHint')),
+        ),
       )
     }
 
@@ -537,14 +589,16 @@ window.__ModuleLoader__.load({
       }, SectionIcon))
 
       /**
-       * The composer chip: the Auto-ShutdownPC switch at the bottom of the
-       * composer, next to the auto-continue chip.
+       * The composer chip: this conversation's Auto-ShutdownPC switch, at the
+       * bottom of the composer next to the auto-continue chip. The switch is
+       * per session: turning it on here arms this conversation only.
        *
        * @param {object} props - the dock's own props.
        * @returns {object} the chip element.
        */
       function AutoShutdownChip(props) {
         const t = (key, values) => translate(key, values)
+        const sessionId = props?.sessionId
         const [state, setState] = React.useState(undefined)
         const [busy, setBusy] = React.useState(false)
         const [clock, setClock] = React.useState(0)
@@ -554,7 +608,8 @@ window.__ModuleLoader__.load({
           let timer
           const load = async () => {
             try {
-              const response = await fetch(ENDPOINT, { headers: { accept: 'application/json' } })
+              const address = sessionId === undefined ? ENDPOINT : `${ENDPOINT}?sessionId=${encodeURIComponent(String(sessionId))}`
+              const response = await fetch(address, { headers: { accept: 'application/json' } })
               const body = await response.json()
               if (!cancelled) setState(body)
             } catch {
@@ -567,7 +622,7 @@ window.__ModuleLoader__.load({
             cancelled = true
             clearTimeout(timer)
           }
-        }, [])
+        }, [sessionId])
 
         React.useEffect(() => {
           const handle = setInterval(() => setClock(Date.now()), TICK_MS)
@@ -575,7 +630,7 @@ window.__ModuleLoader__.load({
         }, [])
 
         /**
-         * Send one control action and adopt the Host's answer.
+         * Send one control action for this session and adopt the Host's answer.
          *
          * @param {object} request - the action to send.
          * @returns {Promise<void>} once the action settled.
@@ -586,7 +641,7 @@ window.__ModuleLoader__.load({
             const response = await fetch(ENDPOINT, {
               method: 'POST',
               headers: { accept: 'application/json', 'content-type': 'application/json' },
-              body: JSON.stringify(request),
+              body: JSON.stringify({ ...request, sessionId }),
             })
             setState(await response.json())
           } catch {
@@ -598,7 +653,8 @@ window.__ModuleLoader__.load({
 
         if (state === undefined) return null
 
-        const pending = state.pending ?? null
+        // Only the conversation that armed the countdown shows it.
+        const pending = state.pendingHere === true ? (state.pending ?? null) : null
         const remaining = pending === null ? 0 : pending.dueAt - (clock > 0 ? clock : Date.now())
         const waiting = pending !== null && remaining > 0
         const on = state.enabled === true

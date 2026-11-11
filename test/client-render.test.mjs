@@ -1,8 +1,11 @@
 // Render harness for dsh-auto-shutdown's Web half: a miniature hook runtime, a
 // fake locale service, a fake fetch, and the real client module. Proves the
-// settings section renders both switches, that each switch posts the right
-// control action, that a pending shutdown shows its countdown and a way out,
-// and that the composer chip never fights the auto-continue chip.
+// settings section is an overview of the per-conversation switches (it renders
+// no switch of its own), that its counts follow the sessions the Host reports,
+// that the machine-wide countdown still shows and can be cancelled, that
+// "turn every switch off" reaches both plugins once, and that the composer chip
+// keeps its per-session behaviour.
+import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 
 let factory
@@ -106,6 +109,12 @@ function findAll(tree, predicate) {
   return hits
 }
 
+/** The button whose visible text is exactly the given text. */
+const buttonOf = (tree, text) => find(tree, node => node.type === 'button' && textOf(node) === text)
+
+/** The POSTs one fake route received, in order. */
+const postsTo = (route) => calls.filter(call => call.options?.method === 'POST' && call.url.split('?')[0] === route)
+
 // --- load the real client module -------------------------------------------
 const require = (name) => {
   if (name === 'react') return reactApi
@@ -157,7 +166,7 @@ loaded.apply(ctx)
 
 const section = slots.sections.find(entry => entry.options.id === 'automation')
 assert.ok(section !== undefined, 'the settings section registered')
-assert.equal(sections0(slots), 1, 'exactly one settings section registered')
+assert.equal(slots.sections.length, 1, 'exactly one settings section registered')
 assert.equal(slots.icons.length, 1, 'exactly one section icon registered')
 assert.equal(slots.icons[0].options.id, 'automation', 'the icon answers the section id')
 assert.equal(slots.dock.length, 1, 'exactly one composer chip registered')
@@ -167,30 +176,53 @@ const chipComponent = slots.dock[0].component
 assert.equal(typeof sectionComponent, 'function', 'section component registered')
 assert.equal(typeof chipComponent, 'function', 'chip component registered')
 
-/** How many settings sections the plugin registered. */
-function sections0(rows) {
-  return rows.sections.length
-}
-
 // --- fake Host state and fetch ---------------------------------------------
 const calls = []
-let shutdown = { revision: '2026-11-12.1', enabled: false, supported: true, platform: 'win32', delaySeconds: 120, now: Date.now(), pending: null }
-let continuation = { revision: '2026-11-12.6', enabled: false, supported: true, now: Date.now(), pending: [] }
+let shutdown = {
+  revision: '2026-11-12.3',
+  sessionId: null,
+  enabled: false,
+  supported: true,
+  platform: 'win32',
+  delaySeconds: 120,
+  now: Date.now(),
+  sessions: [],
+  pendingHere: false,
+  pending: null,
+}
+let continuation = {
+  revision: '2026-11-12.6',
+  sessionId: null,
+  enabled: false,
+  supported: true,
+  now: Date.now(),
+  pending: [],
+  sessions: [],
+}
 globalThis.fetch = async (url, options = {}) => {
-  const target = String(url)
-  calls.push({ url: target, options })
+  const address = String(url)
+  const route = address.split('?')[0]
+  calls.push({ url: address, options })
   if (options.method === 'POST') {
     const request = JSON.parse(options.body)
-    if (target === '/plugins/auto-shutdown') {
-      if (request.action === 'toggle') shutdown = { ...shutdown, enabled: typeof request.enabled === 'boolean' ? request.enabled : !shutdown.enabled }
-      if (request.action === 'cancel') shutdown = { ...shutdown, pending: null }
+    if (route === '/plugins/auto-shutdown') {
+      if (request.action === 'cancel') shutdown = { ...shutdown, pending: null, pendingHere: false }
+      if (request.action === 'off-all') shutdown = { ...shutdown, sessions: [], pending: null, pendingHere: false }
+      if (request.action === 'toggle') {
+        shutdown = {
+          ...shutdown,
+          enabled: typeof request.enabled === 'boolean' ? request.enabled : !shutdown.enabled,
+          sessionId: typeof request.sessionId === 'string' ? request.sessionId : null,
+        }
+      }
     }
-    if (target === '/plugins/auto-continue') {
-      if (request.action === 'toggle') continuation = { ...continuation, enabled: typeof request.enabled === 'boolean' ? request.enabled : !continuation.enabled }
+    if (route === '/plugins/auto-continue' && request.action === 'toggle') {
+      const others = continuation.sessions.filter(id => id !== request.sessionId)
+      continuation = { ...continuation, sessions: request.enabled === false ? others : [...others, request.sessionId] }
     }
-    return { ok: true, json: async () => (target === '/plugins/auto-shutdown' ? shutdown : continuation) }
+    return { ok: true, json: async () => (route === '/plugins/auto-shutdown' ? shutdown : continuation) }
   }
-  return { ok: true, json: async () => (target === '/plugins/auto-shutdown' ? shutdown : continuation) }
+  return { ok: true, json: async () => (route === '/plugins/auto-shutdown' ? shutdown : continuation) }
 }
 
 /** Mount the settings section fresh against one Host state and one locale. */
@@ -216,11 +248,19 @@ async function mountChip({ localeId = 'en', state }) {
   return tree
 }
 
-/** The switch whose accessible name is the given text. */
-const switchOf = (tree, label) => find(tree, node => node.props?.role === 'switch' && node.props?.['aria-label'] === label)
-
-const OFF_SHUTDOWN = { revision: '2026-11-12.1', enabled: false, supported: true, platform: 'win32', delaySeconds: 120, now: Date.now(), pending: null }
-const OFF_CONTINUE = { revision: '2026-11-12.6', enabled: false, supported: true, now: Date.now(), pending: [] }
+const OFF_SHUTDOWN = {
+  revision: '2026-11-12.3',
+  sessionId: null,
+  enabled: false,
+  supported: true,
+  platform: 'win32',
+  delaySeconds: 120,
+  now: Date.now(),
+  sessions: [],
+  pendingHere: false,
+  pending: null,
+}
+const OFF_CONTINUE = { revision: '2026-11-12.6', sessionId: null, enabled: false, supported: true, now: Date.now(), pending: [], sessions: [] }
 
 // 1. The section sits after browser-use and carries a localized label.
 assert.equal(section.options.name, 'settings.section')
@@ -235,135 +275,164 @@ locale.active = 'zh'
 assert.equal(section.options.label(), '自动化')
 console.log('ok 1 section registered:', section.options.id, section.options.order)
 
-// 2. The section renders both switch rows.
+// 2. The section renders both status rows and no switch of its own.
 let tree = await mountSection({ localeId: 'en', shutdownState: OFF_SHUTDOWN, continueState: OFF_CONTINUE })
-const switches = findAll(tree, node => node.props?.role === 'switch')
-assert.equal(switches.length, 2, 'both switch rows render')
-assert.ok(switchOf(tree, 'Auto-continue after usage limits') !== undefined, 'the auto-continue row renders')
-assert.ok(switchOf(tree, 'Auto-ShutdownPC') !== undefined, 'the auto-shutdown row renders')
-assert.match(textOf(tree), /Auto-continue after usage limits/u)
-assert.match(textOf(tree), /Auto-ShutdownPC/u)
-assert.match(textOf(tree), /Warning: this switch really powers the computer down/u)
-console.log('ok 2 both switch rows:', textOf(tree).slice(0, 120))
+let text = textOf(tree)
+assert.equal(findAll(tree, node => node.props?.role === 'switch').length, 0, 'the section renders no switch')
+assert.equal(findAll(tree, node => String(node.props?.className ?? '').split(' ').includes('dshas_statusLine')).length, 2, 'both status rows render')
+assert.match(text, /Auto-continue after usage limits/u, 'the auto-continue row renders')
+assert.match(text, /Auto-ShutdownPC/u, 'the auto-shutdown row renders')
+assert.match(text, /under the composer of the conversation you mean/u, 'the intro points at the composer switch')
+assert.match(text, /Warning: this switch really powers the computer down/u, 'the red warning stays')
+console.log('ok 2 both status rows, no switches')
 
-// 3. The auto-continue switch shows off when the Host says so.
-tree = await mountSection({ localeId: 'en', shutdownState: OFF_SHUTDOWN, continueState: OFF_CONTINUE })
-assert.equal(switchOf(tree, 'Auto-continue after usage limits').props['aria-checked'], 'false')
-assert.equal(switchOf(tree, 'Auto-ShutdownPC').props['aria-checked'], 'false')
-console.log('ok 3 both switches off')
+// 3. The count wording follows the sessions the Host reports.
+text = textOf(tree)
+assert.equal((text.match(/No conversation has it on/gu) ?? []).length, 2, 'both rows say nothing is on')
+tree = await mountSection({
+  localeId: 'en',
+  shutdownState: { ...OFF_SHUTDOWN, sessions: ['shutdown-a', 'shutdown-b'] },
+  continueState: { ...OFF_CONTINUE, sessions: ['continue-a', 'continue-b'] },
+})
+text = textOf(tree)
+assert.equal((text.match(/2 conversations on/gu) ?? []).length, 2, 'both rows count their own sessions')
+assert.doesNotMatch(text, /No conversation has it on/u)
+console.log('ok 3 counts follow the sessions arrays')
 
-// 4. Clicking the Auto-ShutdownPC switch posts the toggle to its own route.
-calls.length = 0
-tree = await mountSection({ localeId: 'en', shutdownState: OFF_SHUTDOWN, continueState: OFF_CONTINUE })
-await switchOf(tree, 'Auto-ShutdownPC').props.onClick()
-await flush()
-const toggleCall = calls.filter(call => call.options?.method === 'POST' && call.url === '/plugins/auto-shutdown').at(-1)
-assert.ok(toggleCall !== undefined, 'the switch posted to /plugins/auto-shutdown')
-assert.deepEqual(JSON.parse(toggleCall.options.body), { action: 'toggle', enabled: true })
-assert.equal(toggleCall.options.headers['content-type'], 'application/json')
-assert.equal(toggleCall.options.headers.accept, 'application/json')
-tree = render(sectionComponent, {})
-assert.equal(switchOf(tree, 'Auto-ShutdownPC').props['aria-checked'], 'true', 'the Host answer is adopted')
-console.log('ok 4 shutdown toggle posted:', toggleCall.options.body)
+// 4. An unsupported platform is reported instead of a count.
+tree = await mountSection({
+  localeId: 'en',
+  shutdownState: { ...OFF_SHUTDOWN, supported: false, platform: 'linux' },
+  continueState: { ...OFF_CONTINUE, supported: false },
+})
+text = textOf(tree)
+assert.match(text, /Automatic continuation needs the schedule service/u, 'auto-continue reports the missing service')
+assert.match(text, /This platform cannot power the computer down, so this switch stays off/u, 'auto-shutdown reports the platform')
+assert.doesNotMatch(text, /Warning: this switch really powers the computer down/u, 'the warning is not claimed where it cannot fire')
+assert.doesNotMatch(text, /No conversation has it on/u, 'an unsupported row shows no count')
+console.log('ok 4 unsupported platform reported')
 
-// 5. Clicking the auto-continue switch posts to the other plugin's route.
-calls.length = 0
-tree = await mountSection({ localeId: 'en', shutdownState: OFF_SHUTDOWN, continueState: OFF_CONTINUE })
-await switchOf(tree, 'Auto-continue after usage limits').props.onClick()
-await flush()
-const continueCall = calls.filter(call => call.options?.method === 'POST' && call.url === '/plugins/auto-continue').at(-1)
-assert.ok(continueCall !== undefined, 'the switch posted to /plugins/auto-continue')
-assert.deepEqual(JSON.parse(continueCall.options.body), { action: 'toggle', enabled: true })
-assert.equal(calls.filter(call => call.options?.method === 'POST' && call.url === '/plugins/auto-shutdown').length, 0, 'the other route was untouched')
-console.log('ok 5 auto-continue toggle posted:', continueCall.options.body)
-
-// 6. A second click while the first is in flight never reaches the Host.
-calls.length = 0
-tree = await mountSection({ localeId: 'en', shutdownState: OFF_SHUTDOWN, continueState: OFF_CONTINUE })
-const busySwitch = switchOf(tree, 'Auto-ShutdownPC')
-busySwitch.props.onClick()
-busySwitch.props.onClick()
-await flush()
-assert.equal(calls.filter(call => call.options?.method === 'POST' && call.url === '/plugins/auto-shutdown').length, 1, 'the switch did not double-fire')
-console.log('ok 6 no double fire')
-
-// 7. A pending shutdown shows the countdown and a way to call it off.
-const armed = {
-  ...OFF_SHUTDOWN,
-  enabled: true,
-  pending: { sessionId: 'abc-123', armedAt: Date.now(), dueAt: Date.now() + 90_000, delaySeconds: 120 },
-}
+// 5. A pending shutdown shows the countdown and a way to call it off.
+const armedPending = { sessionId: 'abc-123', armedAt: Date.now(), dueAt: Date.now() + 90_000, delaySeconds: 120 }
+const armed = { ...OFF_SHUTDOWN, enabled: true, sessions: ['abc-123'], pending: armedPending, pendingHere: true }
 calls.length = 0
 tree = await mountSection({ localeId: 'th', shutdownState: armed, continueState: OFF_CONTINUE })
-assert.match(textOf(tree), /รอปิดเครื่อง/u, 'the pending row renders')
-assert.match(textOf(tree), /จะปิดเครื่องในอีก/u, 'the countdown renders')
-assert.match(textOf(tree), /1 น\./u, 'the countdown reads minutes')
-assert.match(textOf(tree), /30 ว\./u, 'the countdown reads seconds')
-const cancel = find(tree, node => node.type === 'button' && String(node.props?.className ?? '').includes('dshas_buttonDanger'))
+text = textOf(tree)
+assert.match(text, /รอปิดเครื่อง/u, 'the pending row renders')
+assert.match(text, /จะปิดเครื่องในอีก/u, 'the countdown renders')
+assert.match(text, /1 น\./u, 'the countdown reads minutes')
+assert.match(text, /30 ว\./u, 'the countdown reads seconds')
+const cancel = buttonOf(tree, 'ยกเลิกการปิดเครื่อง')
 assert.ok(cancel !== undefined, 'the cancel control renders')
-assert.match(textOf(cancel), /ยกเลิกการปิดเครื่อง/u)
 await cancel.props.onClick()
 await flush()
-const cancelCall = calls.filter(call => call.options?.method === 'POST' && call.url === '/plugins/auto-shutdown').at(-1)
-assert.deepEqual(JSON.parse(cancelCall.options.body), { action: 'cancel' })
-console.log('ok 7 pending countdown and cancel:', cancelCall.options.body)
+const cancelPosts = postsTo('/plugins/auto-shutdown')
+assert.equal(cancelPosts.length, 1, 'the cancel control posted once')
+assert.deepEqual(JSON.parse(cancelPosts[0].options.body), { action: 'cancel' })
+console.log('ok 5 pending countdown and cancel:', cancelPosts[0].options.body)
 
-// 8. A platform that cannot power the computer down disables that switch.
-const unsupported = { ...OFF_SHUTDOWN, supported: false }
-tree = await mountSection({ localeId: 'en', shutdownState: unsupported, continueState: OFF_CONTINUE })
-const deadSwitch = switchOf(tree, 'Auto-ShutdownPC')
-assert.equal(deadSwitch.props.disabled, true, 'the switch is disabled')
-assert.match(textOf(tree), /This platform cannot power the computer down/u)
-assert.doesNotMatch(textOf(tree), /Warning: this switch really powers the computer down/u)
-console.log('ok 8 unsupported platform disabled')
+// 6. "Turn every switch off" reaches both plugins, then reloads both states.
+calls.length = 0
+tree = await mountSection({
+  localeId: 'en',
+  shutdownState: { ...OFF_SHUTDOWN, sessions: ['shutdown-a'] },
+  continueState: { ...OFF_CONTINUE, sessions: ['continue-a', 'continue-b'] },
+})
+const offAll = buttonOf(tree, 'Turn every switch off')
+assert.ok(offAll !== undefined, 'the danger button renders')
+assert.match(String(offAll.props.className), /dshas_buttonDanger/u, 'it is a danger button')
+offAll.props.onClick()
+const busyTree = render(sectionComponent, {})
+assert.equal(buttonOf(busyTree, 'Turn every switch off').props.disabled, true, 'the button is disabled while busy')
+await flush()
+const shutdownPosts = postsTo('/plugins/auto-shutdown')
+const continuePosts = postsTo('/plugins/auto-continue')
+assert.equal(shutdownPosts.length, 1, 'the shutdown route was posted once')
+assert.deepEqual(JSON.parse(shutdownPosts[0].options.body), { action: 'off-all' })
+assert.equal(shutdownPosts[0].options.headers['content-type'], 'application/json')
+assert.equal(shutdownPosts[0].options.headers.accept, 'application/json')
+assert.equal(continuePosts.length, 2, 'one toggle per auto-continue session')
+assert.deepEqual(
+  continuePosts.map(call => JSON.parse(call.options.body)),
+  [
+    { action: 'toggle', enabled: false, sessionId: 'continue-a' },
+    { action: 'toggle', enabled: false, sessionId: 'continue-b' },
+  ],
+)
+const settled = render(sectionComponent, {})
+assert.equal(buttonOf(settled, 'Turn every switch off').props.disabled, false, 'the button is usable again')
+assert.equal((textOf(settled).match(/No conversation has it on/gu) ?? []).length, 2, 'both counts reloaded as empty')
+console.log('ok 6 turn every switch off:', JSON.stringify(shutdownPosts[0].options.body), continuePosts.length, 'continue toggles')
 
-// 9. The composer chip renders beside the auto-continue chip.
+// 7. The three dictionaries carry the same keys, and the locale files match.
+const dictionaries = locale.dicts.get(NS)
+assert.ok(dictionaries !== undefined, 'the dictionaries registered under the plugin namespace')
+const enKeys = Object.keys(dictionaries.en).sort()
+assert.deepEqual(Object.keys(dictionaries.th).sort(), enKeys, 'Thai carries every English key')
+assert.deepEqual(Object.keys(dictionaries.zh).sort(), enKeys, 'Chinese carries every English key')
+for (const id of ['en', 'th', 'zh']) {
+  assert.equal(typeof dictionaries[id].meta.title, 'string', `${id} meta title`)
+  assert.equal(typeof dictionaries[id].meta.description, 'string', `${id} meta description`)
+  const file = JSON.parse(readFileSync(new URL(`../locale/${id}.json`, import.meta.url), 'utf8'))
+  assert.deepEqual(file, dictionaries[id], `locale/${id}.json matches the registered ${id} dictionary`)
+  for (const key of ['intro', 'autoContinueHint', 'autoShutdownHint', 'countOn', 'countNone', 'offAll', 'offAllHint']) {
+    assert.equal(typeof dictionaries[id][key], 'string', `${id} carries ${key}`)
+  }
+}
+assert.equal(dictionaries.en.countOn, '{count} conversations on')
+assert.equal(dictionaries.en.countNone, 'No conversation has it on')
+assert.equal(dictionaries.en.offAll, 'Turn every switch off')
+assert.equal(dictionaries.en.meta.title, 'Auto-shutdown the PC after a session finishes')
+console.log('ok 7 dictionaries complete:', enKeys.length, 'keys in en/th/zh and in locale/*.json')
+
+// 8. The composer chip stays per session: off label, toggle, own countdown only.
 assert.equal(slots.dock[0].options.id, 'auto-shutdown')
 assert.equal(slots.dock[0].options.order, 4)
 assert.equal(slots.dock[0].options.name, 'conversation.composer.dock')
+calls.length = 0
 tree = await mountChip({ localeId: 'en', state: OFF_SHUTDOWN })
 const stat = find(tree, node => node.props?.['data-composer-stat'] !== undefined)
 assert.ok(stat !== undefined, 'the chip carries a composer stat')
 assert.equal(stat.props['data-composer-stat'], 'auto-shutdown')
-const chipButton = find(tree, node => node.props?.['data-auto-shutdown'] !== undefined)
-assert.equal(chipButton.props['data-auto-shutdown'], 'off')
-assert.match(textOf(tree), /Shutdown: off/u)
-console.log('ok 9 composer chip off:', textOf(tree))
-
-// 10. The chip turns the switch on and shows the countdown while one is armed.
-calls.length = 0
-tree = await mountChip({ localeId: 'en', state: OFF_SHUTDOWN })
+assert.equal(find(tree, node => node.props?.['data-auto-shutdown'] !== undefined).props['data-auto-shutdown'], 'off')
+assert.match(textOf(tree), /Shutdown: off/u, 'the chip reads off')
 await find(tree, node => node.props?.['data-auto-shutdown'] !== undefined).props.onClick()
 await flush()
-const chipToggle = calls.filter(call => call.options?.method === 'POST' && call.url === '/plugins/auto-shutdown').at(-1)
-assert.deepEqual(JSON.parse(chipToggle.options.body), { action: 'toggle', enabled: true })
-tree = await mountChip({ localeId: 'en', state: { ...OFF_SHUTDOWN, enabled: true, pending: armed.pending } })
-assert.equal(find(tree, node => node.props?.['data-auto-shutdown'] !== undefined).props['data-auto-shutdown'], 'waiting')
-assert.match(textOf(tree), /Shutdown in/u)
-const chipCancel = find(tree, node => node.type === 'button' && node.children.includes('×'))
-assert.ok(chipCancel !== undefined, 'the chip offers a cancel control')
-await chipCancel.props.onClick()
+const chipToggle = postsTo('/plugins/auto-shutdown').at(-1)
+assert.ok(chipToggle !== undefined, 'the chip posted to its own route')
+assert.deepEqual(JSON.parse(chipToggle.options.body), { action: 'toggle', enabled: true, sessionId: 'session-1' })
+assert.equal(JSON.parse(chipToggle.options.body).sessionId, 'session-1', 'the chip sends its session id')
+tree = await mountChip({
+  localeId: 'en',
+  state: { ...OFF_SHUTDOWN, enabled: true, sessions: ['session-1'], pending: armedPending, pendingHere: true },
+})
+assert.match(textOf(tree), /Shutdown in/u, 'the owning conversation sees its countdown')
+assert.ok(buttonOf(tree, '×') !== undefined, 'the owning conversation can cancel')
+tree = await mountChip({
+  localeId: 'en',
+  state: { ...OFF_SHUTDOWN, enabled: true, sessions: ['session-1'], pending: armedPending, pendingHere: false },
+})
+assert.doesNotMatch(textOf(tree), /Shutdown in/u, 'another conversation never sees the countdown')
+assert.match(textOf(tree), /Shutdown: on/u, 'it still reads its own switch as on')
+assert.equal(buttonOf(tree, '×'), undefined, 'it offers no cancel control')
+console.log('ok 8 composer chip per session:', chipToggle.options.body)
+
+// 9. The danger button never fires twice, even when clicked twice at once.
+calls.length = 0
+tree = await mountSection({
+  localeId: 'en',
+  shutdownState: OFF_SHUTDOWN,
+  continueState: { ...OFF_CONTINUE, sessions: ['continue-a', 'continue-b'] },
+})
+const twice = buttonOf(tree, 'Turn every switch off')
+twice.props.onClick()
+twice.props.onClick()
 await flush()
-const chipCancelCall = calls.filter(call => call.options?.method === 'POST' && call.url === '/plugins/auto-shutdown').at(-1)
-assert.deepEqual(JSON.parse(chipCancelCall.options.body), { action: 'cancel' })
-console.log('ok 10 chip toggle and cancel posted')
+assert.equal(postsTo('/plugins/auto-shutdown').length, 1, 'off-all reached the Host once')
+assert.equal(postsTo('/plugins/auto-continue').length, 2, 'each auto-continue session was switched off once')
+console.log('ok 9 turn every switch off never double-fires')
 
-// 11. The Thai and Chinese copy is complete.
-const dictionaries = locale.dicts.get(NS)
-assert.ok(dictionaries !== undefined, 'the dictionaries registered under the plugin namespace')
-for (const id of ['en', 'th', 'zh']) {
-  assert.ok(dictionaries[id] !== undefined, `${id} dictionary registered`)
-  assert.equal(typeof dictionaries[id].meta.title, 'string', `${id} meta title`)
-  assert.equal(typeof dictionaries[id].meta.description, 'string', `${id} meta description`)
-}
-const enKeys = Object.keys(dictionaries.en).sort()
-assert.deepEqual(Object.keys(dictionaries.th).sort(), enKeys, 'Thai carries every English key')
-assert.deepEqual(Object.keys(dictionaries.zh).sort(), enKeys, 'Chinese carries every English key')
-assert.ok(enKeys.includes('nav'))
-assert.equal(dictionaries.en.meta.title, 'Auto-shutdown the PC after a session finishes')
-console.log('ok 11 dictionaries complete:', enKeys.length, 'keys in en/th/zh')
-
-// 12. A failed fetch leaves the section quiet instead of crashing.
+// 10. A failed fetch leaves the section quiet instead of crashing.
 globalThis.fetch = async () => {
   throw new Error('offline')
 }
@@ -372,8 +441,8 @@ tree = render(sectionComponent, {})
 await flush()
 tree = render(sectionComponent, {})
 assert.match(textOf(tree), /The action failed/u)
-console.log('ok 12 a failed fetch is reported')
+console.log('ok 10 a failed fetch is reported')
 
-console.log('\nall 12 render checks passed')
-// The chip keeps a polling timer alive, exactly as it does in the page.
+console.log('\nall 10 render checks passed')
+// The section and the chip keep polling timers alive, exactly as they do in the page.
 process.exit(0)
